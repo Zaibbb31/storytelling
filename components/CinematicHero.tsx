@@ -27,37 +27,79 @@ export default function CinematicHero() {
     setVideoReady(true);
   }, []);
 
-  // Main scroll-driven logic for text animations
+  // Main scroll-driven logic with optimized video scrubbing
   useEffect(() => {
+    const video = videoRef.current;
     const section = sectionRef.current;
-    if (!section) return;
+    if (!video || !section) return;
 
-    // ScrollTrigger: animate text (lightweight)
-    const st = ScrollTrigger.create({
-      trigger: section,
-      start: "top top",
-      end: "bottom bottom",
-      scrub: 1.5, // Higher = smoother scroll tracking
-      onUpdate: (self) => {
-        const p = self.progress;
+    // Reduced motion check
+    const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReduced) return;
 
-        // --- Text block animations ---
-        animateBlock(textBlocksRef.current[0], p, 0.02, 0.12, 0.22, 0.30);
-        animateBlock(textBlocksRef.current[1], p, 0.30, 0.40, 0.50, 0.60);
-        animateBlock(textBlocksRef.current[2], p, 0.60, 0.70, 0.78, 0.85);
-        animateBlock(textBlocksRef.current[3], p, 0.85, 0.93, 1.1, 1.1);
+    let lastSeekTime = 0;
 
-        // --- Scroll indicator fade ---
-        const indicator = scrollIndicatorRef.current;
-        if (indicator) {
-          const indicatorOpacity = p < 0.05 ? 1 : Math.max(0, 1 - (p - 0.05) / 0.05);
-          indicator.style.opacity = String(indicatorOpacity);
-        }
-      },
-    });
+    const waitForVideo = () => {
+      const duration = video.duration;
+      if (!duration || isNaN(duration)) return;
+
+      video.pause();
+      video.currentTime = 0;
+
+      // ScrollTrigger: set target time + animate text (lightweight)
+      const st = ScrollTrigger.create({
+        trigger: section,
+        start: "top top",
+        end: "bottom bottom",
+        scrub: 1.5, // Higher = smoother scroll tracking
+        onUpdate: (self) => {
+          const p = self.progress;
+
+          // --- Set video target with throttling to avoid decoder lag ---
+          const targetTime = p * duration;
+          // Only seek if the difference is more than 0.08 seconds (approx 12fps update rate)
+          // This significantly reduces the load on the browser's video decoder
+          if (Math.abs(targetTime - lastSeekTime) > 0.08) {
+            video.currentTime = targetTime;
+            lastSeekTime = targetTime;
+          }
+
+          // --- Text block animations ---
+          animateBlock(textBlocksRef.current[0], p, 0.02, 0.12, 0.22, 0.30);
+          animateBlock(textBlocksRef.current[1], p, 0.30, 0.40, 0.50, 0.60);
+          animateBlock(textBlocksRef.current[2], p, 0.60, 0.70, 0.78, 0.85);
+          animateBlock(textBlocksRef.current[3], p, 0.85, 0.93, 1.1, 1.1);
+
+          // --- Scroll indicator fade ---
+          const indicator = scrollIndicatorRef.current;
+          if (indicator) {
+            const indicatorOpacity = p < 0.05 ? 1 : Math.max(0, 1 - (p - 0.05) / 0.05);
+            indicator.style.opacity = String(indicatorOpacity);
+          }
+        },
+      });
+
+      return () => {
+        st.kill();
+      };
+    };
+
+    let cleanup: (() => void) | undefined;
+
+    if (video.readyState >= 1) {
+      cleanup = waitForVideo();
+    } else {
+      const onMeta = () => {
+        cleanup = waitForVideo();
+      };
+      video.addEventListener("loadedmetadata", onMeta, { once: true });
+      return () => {
+        video.removeEventListener("loadedmetadata", onMeta);
+      };
+    }
 
     return () => {
-      st.kill();
+      cleanup?.();
     };
   }, [isMobile]);
 
@@ -139,8 +181,6 @@ export default function CinematicHero() {
           className="absolute inset-0 w-full h-full object-cover"
           src={videoSrc}
           muted
-          autoPlay
-          loop
           playsInline
           preload="auto"
           onCanPlay={handleCanPlay}
