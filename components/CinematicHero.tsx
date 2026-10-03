@@ -27,106 +27,37 @@ export default function CinematicHero() {
     setVideoReady(true);
   }, []);
 
-  // Main scroll-driven logic with smooth lerp-based video scrubbing
+  // Main scroll-driven logic for text animations
   useEffect(() => {
-    const video = videoRef.current;
     const section = sectionRef.current;
-    if (!video || !section) return;
+    if (!section) return;
 
-    // Reduced motion check
-    const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (prefersReduced) return;
+    // ScrollTrigger: animate text (lightweight)
+    const st = ScrollTrigger.create({
+      trigger: section,
+      start: "top top",
+      end: "bottom bottom",
+      scrub: 1.5, // Higher = smoother scroll tracking
+      onUpdate: (self) => {
+        const p = self.progress;
 
-    // Lerp state — lives outside React, updated every frame
-    let targetTime = 0;
-    let currentTime = 0;
-    let rafId: number | null = null;
-    let isRunning = true;
+        // --- Text block animations ---
+        animateBlock(textBlocksRef.current[0], p, 0.02, 0.12, 0.22, 0.30);
+        animateBlock(textBlocksRef.current[1], p, 0.30, 0.40, 0.50, 0.60);
+        animateBlock(textBlocksRef.current[2], p, 0.60, 0.70, 0.78, 0.85);
+        animateBlock(textBlocksRef.current[3], p, 0.85, 0.93, 1.1, 1.1);
 
-    // Smooth interpolation loop — runs independently of scroll events
-    const lerpLoop = () => {
-      if (!isRunning) return;
-
-      if (video.readyState >= 2) {
-        // Lerp: move 8% closer to target each frame (~60fps = very smooth)
-        const diff = targetTime - currentTime;
-        if (Math.abs(diff) > 0.01) {
-          currentTime += diff * 0.08;
-          video.currentTime = currentTime;
-        } else {
-          currentTime = targetTime;
+        // --- Scroll indicator fade ---
+        const indicator = scrollIndicatorRef.current;
+        if (indicator) {
+          const indicatorOpacity = p < 0.05 ? 1 : Math.max(0, 1 - (p - 0.05) / 0.05);
+          indicator.style.opacity = String(indicatorOpacity);
         }
-      }
-
-      rafId = requestAnimationFrame(lerpLoop);
-    };
-
-    const waitForVideo = () => {
-      const duration = video.duration;
-      if (!duration || isNaN(duration)) return;
-
-      video.pause();
-      video.currentTime = 0;
-      currentTime = 0;
-      targetTime = 0;
-
-      // Start the smooth lerp loop
-      rafId = requestAnimationFrame(lerpLoop);
-
-      // ScrollTrigger: set target time + animate text (lightweight)
-      const st = ScrollTrigger.create({
-        trigger: section,
-        start: "top top",
-        end: "bottom bottom",
-        scrub: 1.5, // Higher = smoother scroll tracking
-        onUpdate: (self) => {
-          const p = self.progress;
-
-          // --- Set video target (lerp loop handles the actual seeking) ---
-          targetTime = p * duration;
-
-          // --- Text block animations ---
-          animateBlock(textBlocksRef.current[0], p, 0.02, 0.12, 0.22, 0.30);
-          animateBlock(textBlocksRef.current[1], p, 0.30, 0.40, 0.50, 0.60);
-          animateBlock(textBlocksRef.current[2], p, 0.60, 0.70, 0.78, 0.85);
-          animateBlock(textBlocksRef.current[3], p, 0.85, 0.93, 1.1, 1.1);
-
-          // --- Scroll indicator fade ---
-          const indicator = scrollIndicatorRef.current;
-          if (indicator) {
-            const indicatorOpacity = p < 0.05 ? 1 : Math.max(0, 1 - (p - 0.05) / 0.05);
-            indicator.style.opacity = String(indicatorOpacity);
-          }
-        },
-      });
-
-      return () => {
-        isRunning = false;
-        if (rafId !== null) cancelAnimationFrame(rafId);
-        st.kill();
-      };
-    };
-
-    let cleanup: (() => void) | undefined;
-
-    if (video.readyState >= 1) {
-      cleanup = waitForVideo();
-    } else {
-      const onMeta = () => {
-        cleanup = waitForVideo();
-      };
-      video.addEventListener("loadedmetadata", onMeta, { once: true });
-      return () => {
-        isRunning = false;
-        if (rafId !== null) cancelAnimationFrame(rafId);
-        video.removeEventListener("loadedmetadata", onMeta);
-      };
-    }
+      },
+    });
 
     return () => {
-      isRunning = false;
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      cleanup?.();
+      st.kill();
     };
   }, [isMobile]);
 
@@ -208,6 +139,8 @@ export default function CinematicHero() {
           className="absolute inset-0 w-full h-full object-cover"
           src={videoSrc}
           muted
+          autoPlay
+          loop
           playsInline
           preload="auto"
           onCanPlay={handleCanPlay}
